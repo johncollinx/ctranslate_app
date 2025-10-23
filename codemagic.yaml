@@ -1,0 +1,23 @@
+workflows:
+  build-android:
+    name: Build Android APK
+    working_directory: ctranslate
+    environment:
+      flutter: stable
+
+    scripts:
+      - name: Clean and get dependencies
+        script: |
+          flutter clean
+          flutter pub get
+
+      - name: Generate launcher icons
+        script: |
+          flutter pub run flutter_launcher_icons
+
+      - name: Build release APK
+        script: |
+          flutter build apk --release
+
+    artifacts:
+      - build/app/outputs/flutter-apk/app-release.apk

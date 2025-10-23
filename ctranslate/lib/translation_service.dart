@@ -1,137 +1,93 @@
-import 'package:flutter/material.dart';
-import 'translation_service.dart';
+import 'dart:convert';
+import 'package:flutter/services.dart' show rootBundle;
 
-void main() => runApp(const MyApp());
+class TranslationService {
+  final Map<String, Map<String, String>> _dicts = {}; // pairKey → {word → translation}
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'CTranslate',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(useMaterial3: true, colorSchemeSeed: Colors.indigo),
-      home: const TranslatorPage(),
-    );
-  }
-}
-
-class TranslatorPage extends StatefulWidget {
-  const TranslatorPage({super.key});
-
-  @override
-  State<TranslatorPage> createState() => _TranslatorPageState();
-}
-
-class _TranslatorPageState extends State<TranslatorPage> {
-  final TranslationService _service = TranslationService();
-  final TextEditingController _inputCtrl = TextEditingController();
-  bool _isLoading = true;
-  String _selectedPair = 'ha_en';
-  String _translatedText = '';
-
-  final List<String> _pairs = [
-    'ha_en',
-    'en_ha',
-    'yo_en',
-    'en_yo',
-    'ig_en',
-    'en_ig'
-  ];
-
-  @override
-  void initState() {
-    super.initState();
-    _loadAssets();
+  Future<void> loadAll() async {
+    // Load all supported language pairs
+    await _load('en_ha', 'assets/en_ha.json');
+    await _load('ha_en', 'assets/ha_en.json');
+    await _load('en_yo', 'assets/en_yo.json');
+    await _load('yo_en', 'assets/yo_en.json');
+    await _load('en_ig', 'assets/en_ig.json');
+    await _load('ig_en', 'assets/ig_en.json');
   }
 
-  Future<void> _loadAssets() async {
-    await _service.loadAll();
-    setState(() => _isLoading = false);
+  Future<void> _load(String key, String assetPath) async {
+    try {
+      final raw = await rootBundle.loadString(assetPath);
+      final List<dynamic> parsed = json.decode(raw);
+      final Map<String, String> map = {};
+
+      for (final entry in parsed) {
+        if (entry is Map && entry.keys.length >= 2) {
+          final keys = entry.keys.toList();
+          final fromKey = keys[0];
+          final toKey = keys[1];
+          final fromVal = (entry[fromKey] ?? '').toString().trim().toLowerCase();
+          final toVal = (entry[toKey] ?? '').toString().trim();
+          if (fromVal.isNotEmpty && toVal.isNotEmpty) {
+            map[fromVal] = toVal;
+          }
+        }
+      }
+
+      _dicts[key] = map;
+    } catch (e) {
+      print('⚠️ Failed to load $assetPath: $e');
+    }
   }
 
-  void _translate() {
-    final query = _inputCtrl.text.trim();
-    if (query.isEmpty) return;
+  /// Exact lookup — returns null if not found
+  String? lookup(String pairKey, String query) {
+    final map = _dicts[pairKey];
+    if (map == null || map.isEmpty) return null;
+    return map[query.toLowerCase()];
+  }
 
-    final exact = _service.lookup(_selectedPair, query);
-    final fuzzy = _service.fuzzyLookup(_selectedPair, query);
+  /// Fuzzy lookup using Levenshtein distance
+  MapEntry<String, String>? fuzzyLookup(String pairKey, String query, {int maxDistance = 3}) {
+    final map = _dicts[pairKey];
+    if (map == null || map.isEmpty) return null;
+    final q = query.toLowerCase();
 
-    setState(() {
-      if (exact != null) {
-        _translatedText = exact;
-      } else if (fuzzy != null) {
-        _translatedText = '${fuzzy.value} (closest: ${fuzzy.key})';
-      } else {
-        _translatedText = 'No translation found';
+    String? bestKey;
+    int bestScore = 9999;
+    map.forEach((k, v) {
+      final d = _levenshtein(k, q);
+      if (d < bestScore) {
+        bestScore = d;
+        bestKey = k;
       }
     });
+
+    if (bestKey != null && bestScore <= maxDistance) {
+      return MapEntry(bestKey!, map[bestKey]!);
+    }
+    return null;
   }
 
-  @override
-  Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
-    }
+  int _levenshtein(String a, String b) {
+    final la = a.length;
+    final lb = b.length;
+    if (la == 0) return lb;
+    if (lb == 0) return la;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('CTranslate'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.swap_horiz),
-            onPressed: () {
-              // Flip direction (e.g., ha_en <-> en_ha)
-              setState(() {
-                if (_selectedPair.contains('_')) {
-                  final parts = _selectedPair.split('_');
-                  _selectedPair = '${parts[1]}_${parts[0]}';
-                }
-              });
-            },
-          )
-        ],
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            DropdownButton<String>(
-              value: _selectedPair,
-              isExpanded: true,
-              items: _pairs.map((pair) {
-                return DropdownMenuItem(
-                  value: pair,
-                  child: Text(pair.toUpperCase()),
-                );
-              }).toList(),
-              onChanged: (val) => setState(() => _selectedPair = val!),
-            ),
-            const SizedBox(height: 20),
-            TextField(
-              controller: _inputCtrl,
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                labelText: 'Enter text',
-              ),
-            ),
-            const SizedBox(height: 10),
-            ElevatedButton.icon(
-              onPressed: _translate,
-              icon: const Icon(Icons.translate),
-              label: const Text('Translate'),
-            ),
-            const SizedBox(height: 30),
-            Text(
-              _translatedText,
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w500),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
-    );
+    final d = List.generate(la + 1, (_) => List<int>.filled(lb + 1, 0));
+    for (var i = 0; i <= la; i++) d[i][0] = i;
+    for (var j = 0; j <= lb; j++) d[0][j] = j;
+
+    for (var i = 1; i <= la; i++) {
+      for (var j = 1; j <= lb; j++) {
+        final cost = a[i - 1] == b[j - 1] ? 0 : 1;
+        d[i][j] = [
+          d[i - 1][j] + 1,
+          d[i][j - 1] + 1,
+          d[i - 1][j - 1] + cost
+        ].reduce((x, y) => x < y ? x : y);
+      }
+    }
+    return d[la][lb];
   }
 }

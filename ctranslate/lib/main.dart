@@ -1,174 +1,133 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'translation_service.dart';
 
-void main() {
-  runApp(const CTranslateApp());
-}
+void main() => runApp(const MyApp());
 
-class CTranslateApp extends StatefulWidget {
-  const CTranslateApp({super.key});
-
-  @override
-  State<CTranslateApp> createState() => _CTranslateAppState();
-}
-
-class _CTranslateAppState extends State<CTranslateApp> {
-  ThemeMode _themeMode = ThemeMode.system;
-  LocalePair _currentPair = LocalePair('en', 'ha');
-
-  @override
-  void initState() {
-    super.initState();
-    _loadPreferences();
-  }
-
-  Future<void> _loadPreferences() async {
-    final prefs = await SharedPreferences.getInstance();
-    final from = prefs.getString('from_lang') ?? 'en';
-    final to = prefs.getString('to_lang') ?? 'ha';
-    setState(() {
-      _currentPair = LocalePair(from, to);
-      _themeMode = (prefs.getBool('dark_mode') ?? false)
-          ? ThemeMode.dark
-          : ThemeMode.light;
-    });
-  }
-
-  Future<void> _savePreferences() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('from_lang', _currentPair.from);
-    await prefs.setString('to_lang', _currentPair.to);
-    await prefs.setBool('dark_mode', _themeMode == ThemeMode.dark);
-  }
-
-  void _toggleTheme() {
-    setState(() {
-      _themeMode =
-          _themeMode == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
-    });
-    _savePreferences();
-  }
-
-  void _switchLanguage(LocalePair pair) {
-    setState(() => _currentPair = pair);
-    _savePreferences();
-  }
-
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'CTranslate',
-      themeMode: _themeMode,
-      theme: ThemeData.light(useMaterial3: true),
-      darkTheme: ThemeData.dark(useMaterial3: true),
-      home: TranslatorScreen(
-        pair: _currentPair,
-        onSwitchLang: _switchLanguage,
-        onToggleTheme: _toggleTheme,
-        isDark: _themeMode == ThemeMode.dark,
-      ),
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(useMaterial3: true, colorSchemeSeed: Colors.indigo),
+      home: const TranslatorPage(),
     );
   }
 }
 
-class LocalePair {
-  final String from;
-  final String to;
-  LocalePair(this.from, this.to);
-
-  String get assetPath => 'assets/${from}_$to.json';
-}
-
-class TranslatorScreen extends StatefulWidget {
-  final LocalePair pair;
-  final bool isDark;
-  final Function(LocalePair) onSwitchLang;
-  final VoidCallback onToggleTheme;
-
-  const TranslatorScreen({
-    super.key,
-    required this.pair,
-    required this.isDark,
-    required this.onSwitchLang,
-    required this.onToggleTheme,
-  });
+class TranslatorPage extends StatefulWidget {
+  const TranslatorPage({super.key});
 
   @override
-  State<TranslatorScreen> createState() => _TranslatorScreenState();
+  State<TranslatorPage> createState() => _TranslatorPageState();
 }
 
-class _TranslatorScreenState extends State<TranslatorScreen> {
-  Map<String, String> _dictionary = {};
-  final _controller = TextEditingController();
-  String _translated = '';
+class _TranslatorPageState extends State<TranslatorPage> {
+  final TranslationService _service = TranslationService();
+  final TextEditingController _inputCtrl = TextEditingController();
+  bool _isLoading = true;
+  String _selectedPair = 'ha_en';
+  String _translatedText = '';
+
+  final List<String> _pairs = [
+    'ha_en',
+    'en_ha',
+    'yo_en',
+    'en_yo',
+    'ig_en',
+    'en_ig'
+  ];
 
   @override
   void initState() {
     super.initState();
-    _loadDictionary();
+    _loadAssets();
   }
 
-  Future<void> _loadDictionary() async {
-    final data = await rootBundle.loadString(widget.pair.assetPath);
-    final jsonMap = json.decode(data) as Map<String, dynamic>;
-    setState(() {
-      _dictionary = jsonMap.map((k, v) => MapEntry(k.toLowerCase(), v));
-    });
+  Future<void> _loadAssets() async {
+    await _service.loadAll();
+    setState(() => _isLoading = false);
   }
 
   void _translate() {
-    final input = _controller.text.trim().toLowerCase();
-    setState(() {
-      _translated = _dictionary[input] ?? 'No translation found.';
-    });
-  }
+    final query = _inputCtrl.text.trim();
+    if (query.isEmpty) return;
 
-  void _swapLanguages() {
-    final newPair = LocalePair(widget.pair.to, widget.pair.from);
-    widget.onSwitchLang(newPair);
+    final exact = _service.lookup(_selectedPair, query);
+    final fuzzy = _service.fuzzyLookup(_selectedPair, query);
+
+    setState(() {
+      if (exact != null) {
+        _translatedText = exact;
+      } else if (fuzzy != null) {
+        _translatedText = '${fuzzy.value} (closest: ${fuzzy.key})';
+      } else {
+        _translatedText = 'No translation found';
+      }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
-        title: Text('Translate (${widget.pair.from} → ${widget.pair.to})'),
+        title: const Text('CTranslate'),
         actions: [
           IconButton(
             icon: const Icon(Icons.swap_horiz),
-            tooltip: 'Swap languages',
-            onPressed: _swapLanguages,
-          ),
-          IconButton(
-            icon: Icon(widget.isDark ? Icons.light_mode : Icons.dark_mode),
-            tooltip: 'Toggle Theme',
-            onPressed: widget.onToggleTheme,
-          ),
+            onPressed: () {
+              // Flip direction (e.g., ha_en <-> en_ha)
+              setState(() {
+                if (_selectedPair.contains('_')) {
+                  final parts = _selectedPair.split('_');
+                  _selectedPair = '${parts[1]}_${parts[0]}';
+                }
+              });
+            },
+          )
         ],
       ),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
+            DropdownButton<String>(
+              value: _selectedPair,
+              isExpanded: true,
+              items: _pairs.map((pair) {
+                return DropdownMenuItem(
+                  value: pair,
+                  child: Text(pair.toUpperCase()),
+                );
+              }).toList(),
+              onChanged: (val) => setState(() => _selectedPair = val!),
+            ),
+            const SizedBox(height: 20),
             TextField(
-              controller: _controller,
+              controller: _inputCtrl,
               decoration: const InputDecoration(
-                labelText: 'Enter text',
                 border: OutlineInputBorder(),
+                labelText: 'Enter text',
               ),
-              onSubmitted: (_) => _translate(),
             ),
-            const SizedBox(height: 16),
-            ElevatedButton(
+            const SizedBox(height: 10),
+            ElevatedButton.icon(
               onPressed: _translate,
-              child: const Text('Translate'),
+              icon: const Icon(Icons.translate),
+              label: const Text('Translate'),
             ),
-            const SizedBox(height: 24),
-            SelectableText(
-              _translated,
-              style: Theme.of(context).textTheme.headlineSmall,
+            const SizedBox(height: 30),
+            Text(
+              _translatedText,
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w500),
+              textAlign: TextAlign.center,
             ),
           ],
         ),

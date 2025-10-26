@@ -1,16 +1,39 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'translation_service.dart';
 
 void main() => runApp(const MyApp());
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'CTranslate',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(useMaterial3: true, colorSchemeSeed: Colors.indigo),
+      theme: ThemeData(
+        useMaterial3: true,
+        colorSchemeSeed: Colors.indigo,
+        textTheme: GoogleFonts.interTextTheme(),
+        scaffoldBackgroundColor: const Color(0xFFF8F9FD),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Colors.indigo,
+          foregroundColor: Colors.white,
+          centerTitle: true,
+          elevation: 2,
+        ),
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.indigo,
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+          ),
+        ),
+      ),
       home: const TranslatorPage(),
     );
   }
@@ -30,14 +53,7 @@ class _TranslatorPageState extends State<TranslatorPage> {
   String _selectedPair = 'ha_en';
   String _translatedText = '';
 
-  final List<String> _pairs = [
-    'ha_en',
-    'en_ha',
-    'yo_en',
-    'en_yo',
-    'ig_en',
-    'en_ig'
-  ];
+  final List<String> _pairs = ['ha_en', 'en_ha', 'yo_en', 'en_yo', 'ig_en', 'en_ig'];
 
   @override
   void initState() {
@@ -72,7 +88,7 @@ class _TranslatorPageState extends State<TranslatorPage> {
   Widget build(BuildContext context) {
     if (_isLoading) {
       return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+        body: Center(child: CircularProgressIndicator(color: Colors.indigo)),
       );
     }
 
@@ -82,54 +98,93 @@ class _TranslatorPageState extends State<TranslatorPage> {
         actions: [
           IconButton(
             icon: const Icon(Icons.swap_horiz),
+            tooltip: "Swap Language Direction",
             onPressed: () {
-              // Flip direction (e.g., ha_en <-> en_ha)
               setState(() {
-                if (_selectedPair.contains('_')) {
-                  final parts = _selectedPair.split('_');
-                  _selectedPair = '${parts[1]}_${parts[0]}';
-                }
+                final parts = _selectedPair.split('_');
+                _selectedPair = '${parts[1]}_${parts[0]}';
               });
             },
-          )
+          ),
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            DropdownButton<String>(
-              value: _selectedPair,
-              isExpanded: true,
-              items: _pairs.map((pair) {
-                return DropdownMenuItem(
-                  value: pair,
-                  child: Text(pair.toUpperCase()),
-                );
-              }).toList(),
-              onChanged: (val) => setState(() => _selectedPair = val!),
-            ),
-            const SizedBox(height: 20),
-            TextField(
-              controller: _inputCtrl,
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                labelText: 'Enter text',
+      body: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 300),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: ListView(
+            children: [
+              Card(
+                elevation: 4,
+                shadowColor: Colors.indigo.withOpacity(0.2),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      DropdownButtonFormField<String>(
+                        value: _selectedPair,
+                        decoration: InputDecoration(
+                          labelText: "Language Pair",
+                          labelStyle: TextStyle(color: Colors.indigo.shade700),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        items: _pairs.map((pair) {
+                          return DropdownMenuItem(
+                            value: pair,
+                            child: Text(pair.toUpperCase(),
+                                style: const TextStyle(fontWeight: FontWeight.w600)),
+                          );
+                        }).toList(),
+                        onChanged: (val) => setState(() => _selectedPair = val!),
+                      ),
+                      const SizedBox(height: 20),
+                      TextField(
+                        controller: _inputCtrl,
+                        maxLines: 3,
+                        decoration: InputDecoration(
+                          hintText: "Enter text to translate...",
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      ElevatedButton.icon(
+                        onPressed: _translate,
+                        icon: const Icon(Icons.translate),
+                        label: const Text('Translate'),
+                      ),
+                    ],
+                  ),
+                ),
               ),
-            ),
-            const SizedBox(height: 10),
-            ElevatedButton.icon(
-              onPressed: _translate,
-              icon: const Icon(Icons.translate),
-              label: const Text('Translate'),
-            ),
-            const SizedBox(height: 30),
-            Text(
-              _translatedText,
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w500),
-              textAlign: TextAlign.center,
-            ),
-          ],
+              const SizedBox(height: 30),
+              if (_translatedText.isNotEmpty)
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 400),
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Colors.indigo.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Text(
+                    _translatedText,
+                    style: GoogleFonts.inter(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.indigo.shade900,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );

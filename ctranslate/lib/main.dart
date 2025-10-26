@@ -157,7 +157,6 @@ class _TranslatorPageState extends State<TranslatorPage> {
                       const SizedBox(height: 20),
                       ElevatedButton.icon(
                         onPressed: _translate,
-                        icon: const Icon(Icons.translate),
                         label: const Text('Translate'),
                       ),
                     ],
